@@ -1,103 +1,119 @@
 import torch
-import torch.nn as nn
-import torch.optim as optim
-
+from torch import nn
 from torch.utils.data import DataLoader
-from torchvision import datasets, models
-from torchvision.transforms import transforms
+from torchvision import datasets
+from torchvision.transforms import ToTensor, Compose, Resize
 
-import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split
+transform = Compose([Resize((512, 512)), ToTensor()])
 
-
-# Transformações para pré processamento
-transform = transforms.Compose(
-    [
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-    ]
-)
-
-# Carregar conjutno de dados
-trainset = datasets.Food101(
+training_data = datasets.Food101(
     root="data", split="train", download=False, transform=transform
 )
-testset = datasets.Food101(
+
+test_data = datasets.Food101(
     root="data", split="test", download=False, transform=transform
 )
 
 
-# Definir classes
-classes = trainset.classes
+batch_size = 64
 
-# Arquitetura do modelo
-model = models.resnet18()
-num_features = model.fc.in_features
-model.fc = nn.Linear(num_features, len(classes))
-
-# Função de perda e otimizador
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
-
-# Carregar os conjuntos de dados
-trainloader = DataLoader(trainset, batch_size=32, shuffle=True)
-testloader = DataLoader(testset, batch_size=32, shuffle=True)
-
-# Treinar o modelo
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = model.to(device)
+train_dataloader = DataLoader(training_data, batch_size=batch_size)
+test_dataloader = DataLoader(test_data, batch_size=batch_size)
 
 
-total_samples = len(trainloader.dataset)
-print("Número total de valores a serem analisados:", total_samples)
+device = (
+    "cuda"
+    if torch.cuda.is_available()
+    else "mps"
+    if torch.backends.mps.is_available()
+    else "cpu"
+)
+
+print(f"Using {device} device")
 
 
-def train():
-    for epoch in range(2):
-        runing_loss = 0.0
-        for i, data in enumerate(trainloader, 0):
-            inputs, labels = data[0].to(device), data[1].to(device)
+class_list = []
+with open(
+    "r",
+) as file:
+    for line in file:
+        line = line.strip()
+        if line:
+            class_list.append(line)
 
-            optimizer.zero_grad()
-
-            outputs = model(inputs)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
-
-            runing_loss += loss.item()
-            if i % 100 == 99:
-                print("[%d, %5d] loss: %.3f" % (epoch + 1, i + 1, runing_loss / 100))
-                runing_loss = 0.0
-
-    print("Treinamento concluído!")
+num_classes = len(class_list)
+print(num_classes)
 
 
-def teste():
-    model.eval()  # Define o modelo no modo de avaliação
+class NeuralNetwork(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.flatten = nn.Flatten()
+        self.linear_relu_stack = nn.Sequential(
+            nn.Linear(512 * 512 * 3, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, 512),
+            nn.ReLU(),
+            nn.Linear(512, num_classes),
+        )
 
-    correct = 0
-    total = 0
+    def forward(self, x):
+        x = self.flatten(x)
+        logits = self.linear_relu_stack(x)
+        return logits
 
-    # Desativa o cálculo de gradientes durante o teste
+
+model = NeuralNetwork().to(device)
+
+loss_fn = nn.CrossEntropyLoss()
+optimizer = torch.optim.SGD(model.parameters(), lr=1e-3)
+
+
+def train(dataloader, model, loss_fn, optimizer):
+    size = len(dataloader.dataset)
+    model.train()
+    for batch, (X, y) in enumerate(dataloader):
+        X, y = X.to(device), y.to(device)
+
+        pred = model(X)
+        loss = loss_fn(pred, y)
+
+        loss.backward()
+        optimizer.step()
+        optimizer.zero_grad()
+
+        if batch % 100 == 0:
+            loss, current = loss.item(), (batch + 1) * len(X)
+            print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
+
+
+def test(dataloader, model, loss_fn):
+    size = len(dataloader.dataset)
+    num_batches = len(dataloader)
+    model.eval()
+    test_loss, correct = 0, 0
     with torch.no_grad():
-        for data in testloader:
-            images, labels = data[0].to(device), data[1].to(device)
-            outputs = model(images)
-            _, predicted = torch.max(outputs.data, 1)
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
+        for X, y in dataloader:
+            X, y = X.to(device), y.to(device)
+            pred = model(X)
+            test_loss += loss_fn(pred, y).item()
+            correct += (pred.argmax(1) == y).type(torch.float).sum().item()
+    test_loss /= num_batches
+    correct /= size
+    print(
+        f"Test Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>8f} \n"
+    )
 
-    # Calcula a precisão do modelo
-    accuracy = 100 * correct / total
-    print("Acurácia do modelo nos dados de teste: %.2f%%" % accuracy)
 
+epochs = 100
+for t in range(epochs):
+    print(f"Epoch {t+1}\n-------------------------------")
+    train(train_dataloader, model, loss_fn, optimizer)
+    test(test_dataloader, model, loss_fn)
+print("Done!")
 
-def save_model():
-    model_path = "modelo.pth"
+torch.save(model.state_dict(), "food.pth")
+print("Saved PyTorch Model State to model.pth")
 
-    # Salvar o modelo
-    torch.save(model.state_dict(), model_path)
-
-    print("Modelo salvo com sucesso em", model_path)
+# model = NeuralNetwork().to(device)
+# model.load_state_dict(torch.load("food.pth"))
