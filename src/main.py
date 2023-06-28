@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from utils.split_images import splitImages 
+from utils.split_images import splitImages
 from services.train_model import train
 from model.load_model import loadModel
 from utils.set_device import setDevice
@@ -68,18 +68,20 @@ print("O numero de imagens para teste é : ", len(test_loader) * batch_size)
 
 
 # Inicializando a rede neural
-resnet18_model = models.resnet50(weights='ResNet50_Weights.DEFAULT')
+resnet18_model = models.resnet50(weights="ResNet50_Weights.DEFAULT")
 num_ftrs = resnet18_model.fc.in_features
-number_of_classes = 2
+number_of_classes = 3
 resnet18_model.fc = nn.Linear(num_ftrs, number_of_classes)
 
-# Definir o device 
+# Definir o device
 device = setDevice()
 resnet18_model = resnet18_model.to(device)
 
 # Definir perda e optimização
 loss_fn = nn.CrossEntropyLoss()
-optimizer = optim.SGD(resnet18_model.parameters(), lr=0.01, momentum=0.9, weight_decay=0.003)
+optimizer = optim.SGD(
+    resnet18_model.parameters(), lr=0.01, momentum=0.9, weight_decay=0.003
+)
 
-#Executar treino da rede
-train(100, resnet18_model, train_loader, test_loader, loss_fn, optimizer , classes)
+# Executar treino da rede
+train(200, resnet18_model, train_loader, test_loader, loss_fn, optimizer, classes)
