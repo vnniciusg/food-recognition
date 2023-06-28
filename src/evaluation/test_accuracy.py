@@ -1,7 +1,9 @@
 import torch
 
+from utils.set_device import setDevice
 
-def testAccuracy(model, test_loader, device):
+def testAccuracy(model, test_loader, classes):
+    device = setDevice()
     model.eval()
     accuracy = 0.0
     total = 0.0
@@ -19,9 +21,12 @@ def testAccuracy(model, test_loader, device):
 
             accuracy += (predicted == labels).sum().item()
 
+          
+
     epoch_acc = 100 * accuracy / total
 
-    print(
-        "-- Testando conjunto de dados. Obteve %d de %d imagens corretamente (%.3f%%)"
-        % (accuracy, total, epoch_acc)
-    )
+    print("-Testando conjunto de dados. Acertou %d de %d imagens (%.3f%%)" % (accuracy, total, epoch_acc))
+
+    
+
+    return accuracy
